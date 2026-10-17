@@ -2710,9 +2710,9 @@ class NormalActionsTest(BaseAction):
             do_change_full_name(cordelia, "Cordelia", self.user_profile, notify=False)
 
     def test_change_date_joined(self) -> None:
-        now = timezone_now()
+        new_date_joined = self.user_profile.date_joined - timedelta(days=1)
         with self.verify_action() as events:
-            do_change_user_date_joined(self.user_profile, now)
+            do_change_user_date_joined(self.user_profile, new_date_joined)
         check_realm_user_update("events[0]", events[0], "date_joined")
 
     def test_change_user_delivery_email_email_address_visibility_admins(self) -> None:
@@ -4334,11 +4334,15 @@ class NormalActionsTest(BaseAction):
         ):
             with (
                 stdout_suppressed(),
-                self.assertLogs(level="INFO") as info_logs,
+                self.assertLogs("zerver.worker.deferred_work", level="INFO") as info_logs,
                 self.verify_action(state_change_expected=True, num_events=3) as events,
             ):
                 self.client_post("/json/export/realm")
-            self.assertTrue("INFO:root:Completed data export for zulip in" in info_logs.output[0])
+            self.assertTrue(
+                info_logs.output[1].startswith(
+                    "INFO:zerver.worker.deferred_work:Completed data export for zulip in "
+                )
+            )
 
         # We get two realm_export events for this action, where the first
         # is missing the export_url (because it's pending).
@@ -4470,10 +4474,11 @@ class NormalActionsTest(BaseAction):
             ):
                 self.client_post("/json/export/realm")
 
-            # Log is of following format: "ERROR:root:Data export for zulip failed after 0.004499673843383789"
-            # Where last floating number is time and will vary in each test hence the following assertion is
-            # independent of time bit by not matching exact log but only part of it.
-            self.assertTrue("ERROR:root:Data export for zulip failed after" in error_log.output[0])
+            self.assertTrue(
+                error_log.output[0].startswith(
+                    "ERROR:zerver.worker.deferred_work:Data export for zulip failed after "
+                )
+            )
             self.assertTrue("Some failure" in error_log.output[0])
 
         # We get two events for the export.
